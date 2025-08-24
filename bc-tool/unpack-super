@@ -6,6 +6,7 @@
 
 IMG="$1"
 OUT="$2"
+BDIR="$PWD"
 
 PLATFORM_TOOLS="$(readlink -f platform_tools)"
 export PLATFORM_TOOLS
@@ -34,37 +35,35 @@ if ! [[ -f "$OUT""$IMG.raw" ]]; then
     simg2img "$OUT""$IMG" "$OUT""$IMG".raw
 fi
 
-if [ -f "$OUT""$IMG".raw ]; then
+if [[ -f "$OUT""$IMG".raw ]]; then
     "$PLATFORM_TOOLS"/lpunpack "$OUT""$IMG".raw "$OUT" &>/dev/null
 fi
 
-super_size=$(stat -c %s "$2""$IMG".raw)
-
 # Fill partition table
-(
-    if test "$(find "$2" -name "*.img" -o -name "*.raw")"; then
-        cd "$2" || exit
-        for img0 in *.img *.raw; do
-            case "$img0" in
-                "$img0")
-                    if [[ -f "$img0" ]]; then
-                        part=`stat -c %s "$img0"`
-                    if [[ "$img0" == "`ls *.raw`" ]]; then
-                        name=`echo "$img0" | sed 's/.\{14\}$//'`
-                    else
-                        name=`echo "$img0" | sed 's/.\{4\}$//'`
-                    fi
-                        printf '%s\n' "put $img0 size ($part byte) to ${10}"
-                        fdtput -t x "${10}" /partitions/"$name" size 0 $(printf '%x\n' "$part")
-                    else
-                        printf '\e[31m%s\n\e[0m' "error: $img0 not found!" >&2
-                        exit 1
-                    fi
-                    ;;
-            esac
-        done
-    fi
-)
+if test "$(find "$2" -name "*.img" -o -name "*.raw")"; then
+    cd "$2" || exit
+    for img0 in *.img *.raw; do
+        case "$img0" in
+            "$img0")
+                if [[ -f "$img0" ]]; then
+                    part=`stat -c %s "$img0"`
+                if [[ "$img0" == "`ls *.raw`" ]]; then
+                    name=`echo "$img0" | sed 's/.\{14\}$//'`
+                    super_size="$part"
+                else
+                    name=`echo "$img0" | sed 's/.\{4\}$//'`
+                fi
+                    printf '%s\n' "put $img0 size ($part byte) to ${10}"
+                    fdtput -t x "${10}" /partitions/"$name" size 0 $(printf '%x\n' "$part")
+                else
+                    printf '\e[31m%s\n\e[0m' "error: $img0 not found!" >&2
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+    cd "$BDIR"
+fi
 
 check_dtb () {
     if test -f 'DT'; then
@@ -89,6 +88,8 @@ check_dtb () {
     fi
 }; check_dtb
 
+# Compare the size of the super.img in the part_bable and dtb.
+# Fix this with <mod-resize-super> if necessary.
 check_dtb=$?
 if [[ "$check_dtb" -eq '0' ]]; then
     PARTSIZE="$(fdtget -t u DT /partitions/"$9" size | sed 's/0 //')"
