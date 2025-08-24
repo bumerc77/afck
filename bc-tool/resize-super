@@ -1,0 +1,544 @@
+#!/bin/bash
+
+###########################################
+# extract/decompile single and multi dtb  #
+# resize partitions                       #
+# compile dtb and combine it to multi-dtb #
+###########################################
+
+if [[ -f "stamp/$3" ]]; then
+    find . -name "$3" -exec rm -f {} +
+fi
+
+if [[ "$(file DTB | grep -c "gzip")" -eq '1' ]]; then
+    printf "%s\n" "detected gzip compressed file..."
+    mv DTB DTB.gz; gzip -d -k DTB
+fi
+
+SUPER_IMAGE="$(realpath "$1")"
+
+if [[ -f "$SUPER_IMAGE" ]]; then
+    DTB="part_table"
+else
+    DTB="DTB"
+fi
+
+list="$(hexdump "$DTB" | grep -c "0dd0 edfe")"
+offset="$(hexdump "$DTB" | grep "0dd0 edfe" | cut -c 1-8 | sed -e 's/^0*//')"
+head="2048"
+
+cleanup() {
+    printf "%s\n" "cleanup..."
+    find . -maxdepth 1 \( -name "DT" -o -name "DTB" -o -name "*.img" \) -exec rm -f {} +
+}
+
+cleanup_dt () {
+    printf "\n%s\n" "cleanup dt..."
+    find . -maxdepth 1 \( -name "$tmp0" -o -name "$tmp1" -o -name "*.dtb" -o -name "*.dts" -o -name "*.img" \) -exec rm -f {} +
+}; trap 'cleanup_dt' EXIT
+
+mod_super () {
+while true; do
+        read -r -p "ATTENTION: You have to rebuild the super.img, press (Y/y) to continue, (N/n) to cancel: "
+        case "$REPLY" in
+            [Yy])
+                cd .. || exit
+                make mod-super
+                cd "$2" || exit
+                ;;
+            [Nn])
+                exit 0
+                ;;
+            *)
+                printf "unknown option: %s\n" "$REPLY"
+                continue
+                ;;
+        esac
+        break
+done
+}
+
+declare -A DT
+DT=(
+    [1]="dd if=$DTB of=DT count=1 bs="          # dtb1+header
+    [2]="dd if=DT skip=1 bs="                   # dtb1
+    [3]="dd if=$DTB skip=1 count=1 bs="         # dtb2 dtb3 ...
+    [4]="dtTool/dtbTool -o $DTB -s"             # combine dtb
+    [5]="dtc -I dtb -O dts -o"                  # extract dts
+    [6]="dtc -I dts -O dtb -o"                  # compile dtb
+    [7]="rm DTB.gz"                             # remove old dtb gz
+    [8]="gzip DTB"                              # compress dtb
+    [9]="mv DTB.gz DTB"                         # rename new dtb gz
+)
+
+# create R/W file descriptors
+if [[ "$list" -ne '0' ]]; then
+    tmp0="$(mktemp tmp.XXXX)"
+    exec {FD_R}<"$tmp0"
+    exec {FD_W}>"$tmp0"
+fi
+
+if [[ -n "$1" ]]; then
+    tmp1=$(mktemp tmp.XXXX)
+fi
+
+if [[ "$list" -gt '1' ]]; then
+    for i in $offset; do
+       echo "$i" | awk '{print strtonum( "0x" $1 )}' >&$FD_W
+    done
+    echo -e "\ndtb offsets: \n$(cat <&$FD_R)"
+fi
+
+if [[ "$list" -gt '1' ]]; then
+    extract_dt () {
+        for i in $(tail -n +2 < "$tmp0"); do
+            ${DT[1]}"$i" &>/dev/null
+            ${DT[3]}"$i" > "${i}.img" &>/dev/null
+        for j in $head; do
+            ${DT[2]}"$j" > "${j}.img" &>/dev/null
+        done
+        done
+}; fi
+
+if [[ -f "$DTB" ]]; then
+    case "$list" in
+       1)
+           printf "%s\n" "extract single-dtb..."
+           cp "$DTB" "${head}.img"
+           ;;
+       [2-9]|15)
+           printf "%s\n" "extract multi-dtb..."
+           extract_dt
+           ;;
+       *)
+           printf "%s\n" "unknown dtb type..."
+           exit 2
+           ;;
+    esac
+fi
+
+declare -A PN
+PN=(
+    [1]="odm"
+    [2]="product"
+    [3]="vendor"
+    [4]="system_a"
+    [5]="boot"
+    [6]="recovery"
+    [7]="super"
+    [8]="system_ext"
+    [9]="system"
+    [10]="system_b"
+    [11]="vendor_a"
+    [12]="vendor_b"
+    [13]="product_a"
+    [14]="product_b"
+    [15]="odm_a"
+    [16]="odm_b"
+    [17]="vendor_dlkm"
+)
+
+if [[ "$list" -ne '0' ]]; then
+    echo ""
+    echo "**************************************"
+    echo "*   Welcome to the selection menu!   *"
+    echo "*       Change partition size        *"
+    echo "**************************************"
+    echo "(1) change ODM partition size"
+    echo "(2) change PRODUCT partition size"
+    echo "(3) change VENDOR partition size"
+    echo "(4) change SYSTEM_A partition size"
+    echo "(5) change BOOT partition size"
+    echo "(6) change RECOVERY partition size"
+    echo "(7) change SUPER partition size"
+    echo "(8) change SYSTEM_EXT partition size"
+    echo "(9) change SYSTEM partition size"
+    echo "(10) change SYSTEM_B partition size"
+    echo "(11) change VENDOR_A partition size"
+    echo "(12) change VENDOR_B partition size"
+    echo "(13) change PRODUCT_A partition size"
+    echo "(14) change PRODUCT_B partition size"
+    echo "(15) change ODM_A partition size"
+    echo "(16) change ODM_B partition size"
+    echo "(17) change VENDOR_DLKM partition size"
+fi
+
+echo ""
+read -r -p "chose partition number: " N
+
+printf "\n%s\n" "Partition Table:"
+printf "*********************************************\n"
+
+for P in "${PN[@]}"; do
+    PARTSIZE=$(fdtget -t x "${head}.img" /partitions/"$P" size | sed -e 's/  */x/g')
+    echo -e "Current $P partition size: \033[1m\033[33m$PARTSIZE\033[0m"
+done > "$tmp1"
+
+if [[ "$N" -ne '0' ]]; then
+    case "$N" in
+        1)
+            sed -i 0,/"${PN[1]}"/s//[32m[1m"${PN[1]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        2)
+            sed -i 0,/"${PN[2]}"/s//[32m[1m"${PN[2]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        3)
+            sed -i 0,/"${PN[3]}"/s//[32m[1m"${PN[3]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        4)
+            sed -i 0,/"${PN[4]}"/s//[32m[1m"${PN[4]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        5)
+            sed -i 0,/"${PN[5]}"/s//[32m[1m"${PN[5]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        6)
+            sed -i 0,/"${PN[6]}"/s//[32m[1m"${PN[6]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        7)
+            sed -i 0,/"${PN[7]}"/s//[32m[1m"${PN[7]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        8)
+            sed -i 0,/"${PN[8]}"/s//[32m[1m"${PN[8]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        9)
+            sed -i 0,/"${PN[9]}"/s//[32m[1m"${PN[9]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        10)
+            sed -i 0,/"${PN[10]}"/s//[32m[1m"${PN[10]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        11)
+            sed -i 0,/"${PN[11]}"/s//[32m[1m"${PN[11]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        12)
+            sed -i 0,/"${PN[12]}"/s//[32m[1m"${PN[12]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        13)
+            sed -i 0,/"${PN[13]}"/s//[32m[1m"${PN[13]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        14)
+            sed -i 0,/"${PN[14]}"/s//[32m[1m"${PN[14]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        15)
+            sed -i 0,/"${PN[15]}"/s//[32m[1m"${PN[15]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        16)
+            sed -i 0,/"${PN[16]}"/s//[32m[1m"${PN[16]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+        17)
+            sed -i 0,/"${PN[17]}"/s//[32m[1m"${PN[17]}"[0m/ "$tmp1"
+            cat "$tmp1"
+            ;;
+    esac
+fi
+
+printf "*********************************************\n"
+
+if [[ "$list" -gt '1' ]]; then
+case "$N" in
+    1)
+        read -r -p "enter odm size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r a; do
+                fdtput -t x "${a}.img" /partitions/odm size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33modm size changed to $s byte\033[0m"
+        ;;
+    2)
+        read -r -p "enter product size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r b; do
+                fdtput -t x "${b}.img" /partitions/product size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mproduct size changed to $s byte\033[0m"
+        ;;
+    3)
+        read -r -p "enter vendor size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r c; do
+                fdtput -t x "${c}.img" /partitions/vendor size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mvendor size changed to $s byte\033[0m"
+        ;;
+    4)
+        read -r -p "enter system size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r d; do
+                fdtput -t x "${d}.img" /partitions/system size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33msystem size changed to $s byte\033[0m"
+        ;;
+    5)
+        read -r -p "enter boot size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r e; do
+                fdtput -t x "${e}.img" /partitions/boot size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mboot size changed to $s byte\033[0m"
+        ;;
+    6)
+        read -r -p "enter recovery size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r f; do
+                fdtput -t x "${f}.img" /partitions/recovery size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mrecovery size changed to $s byte\033[0m"
+        ;;
+    7)
+        read -p "enter super size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r g; do
+                fdtput -t x "${g}.img" /partitions/super size 0 "$size"
+            done < "$tmp0"
+                fdtput -t x $DTB /partitions/super size 0 "$size"
+                echo -e "\n\033[1m\033[33msuper size changed to $s byte\033[0m"
+                mod_super "$@"
+        ;;
+    8)
+        read -r -p "enter system_ext size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r h; do
+                fdtput -t x "${h}.img" /partitions/system_ext size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33msystem_ext size changed to $s byte\033[0m"
+        ;;
+    9)
+        read -r -p "enter system size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r i; do
+                fdtput -t x "${i}.img" /partitions/system size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33msystem size changed to $s byte\033[0m"
+        ;;
+    10)
+        read -r -p "enter system_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r j; do
+                fdtput -t x "${j}.img" /partitions/system_b size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33msystem_b size changed to $s byte\033[0m"
+        ;;
+    11)
+        read -r -p "enter vendor_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r k; do
+                fdtput -t x "${k}.img".img /partitions/vendor_a size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mvendor_a size changed to $s byte\033[0m"
+        ;;
+    12)
+        read -r -p "enter vendor_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r l; do
+                fdtput -t x "${l}.img" /partitions/vendor_b size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mvendor_b size changed to $s byte\033[0m"
+        ;;
+    13)
+        read -r -p "enter product_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r m; do
+                fdtput -t x "${m}.img" /partitions/product_a size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mproduct_a size changed to $s byte\033[0m"
+        ;;
+    14)
+        read -r -p "enter product_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r n; do
+                fdtput -t x "${n}.img" /partitions/product_b size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mproduct_b size changed to $s byte\033[0m"
+        ;;
+    15)
+        read -r -p "enter odm_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r o; do
+                fdtput -t x "${o}.img" /partitions/odm_a size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33modm_a size changed to $s byte\033[0m"
+        ;;
+    16)
+        read -r -p "enter odm_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r p; do
+                fdtput -t x "${p}.img" /partitions/odm_b size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33modm_b size changed to $s byte\033[0m"
+        ;;
+    17)
+        read -r -p "enter vendor_dlkm size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            while read -r p; do
+                fdtput -t x "${p}.img" /partitions/vendor_dlkm size 0 "$size"
+            done < "$tmp0"; echo -e "\n\033[1m\033[33mvendor_dlkm size changed to $s byte\033[0m"
+        ;;
+    *)
+        exit 2
+        ;;
+esac
+    else
+case "$N" in
+    1)
+        read -r -p "enter odm size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/odm size 0 "$size"
+            echo -e "\n\033[1m\033[33modm size changed to $s byte\033[0m"
+        ;;
+    2)
+        read -r -p "enter product size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/product size 0 "$size"
+            echo -e "\n\033[1m\033[33mproduct size changed to $s byte\033[0m"
+        ;;
+    3)
+        read -r -p "enter vendor size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/vendor size 0 "$size"
+            echo -e "\n\033[1m\033[33mvendor size changed to $s byte\033[0m"
+        ;;
+    4)
+        read -r -p "enter system_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/system_a size 0 "$size"
+            echo -e "\n\033[1m\033[33msystem_a size changed to $s byte\033[0m"
+        ;;
+    5)
+        read -r -p "enter boot size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/boot size 0 "$size"
+            echo -e "\n\033[1m\033[33mboot size changed to $s byte\033[0m"
+        ;;
+    6)
+        read -r -p "enter recovery size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+           fdtput -t x $DTB /partitions/recovery size 0 "$size"
+           echo -e "\n\033[1m\033[33mrecovery size changed to $s byte\033[0m"
+        ;;
+    7)
+        read -r -p "enter super size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/super size 0 "$size"
+            DTB="DTB"; fdtput -t x $DTB /partitions/super size 0 "$size"
+            echo -e "\n\033[1m\033[33msuper size changed to $s byte\033[0m\n"
+            mod_super "$@"
+        ;;
+    8)
+        read -r -p "enter system_ext size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/system_ext size 0 "$size"
+            echo -e "\n\033[1m\033[33msystem_ext size changed to $s byte\033[0m"
+        ;;
+    9)
+        read -r -p "enter system size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/system size 0 "$size"
+            echo -e "\n\033[1m\033[33msystem size changed to $s byte\033[0m"
+        ;;
+    10) read -r -p "enter system_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/system_b size 0 "$size"
+            echo -e "\n\033[1m\033[33msystem_b size changed to $s byte\033[0m"
+        ;;
+    11) read -r -p "enter vendor_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/vendor_a size 0 "$size"
+            echo -e "\n\033[1m\033[33mvendor_a size changed to $s byte\033[0m"
+        ;;
+    12)
+        read -r -p "enter vendor_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/vendor_b size 0 "$size"
+            echo -e "\n\033[1m\033[33mvendor_b size changed to $s byte\033[0m"
+        ;;
+    13)
+        read -r -p "enter product_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/product_a size 0 "$size"
+            echo -e "\n\033[1m\033[33mproduct_a size changed to $s byte\033[0m"
+        ;;
+    14)
+        read -r -p "enter product_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/product_b size 0 "$size"
+            echo -e "\n\033[1m\033[33mproduct_b size changed to $s byte\033[0m"
+        ;;
+    15)
+        read -r -p "enter odm_a size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/odm_a size 0 "$size"
+            echo -e "\n\033[1m\033[33modm_a size changed to $s byte\033[0m"
+        ;;
+    16)
+        read -r -p "enter odm_b size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/odm_b size 0 "$size"
+            echo -e "\n\033[1m\033[33modm_b size changed to $s byte\033[0m"
+        ;;
+    17)
+        read -r -p "enter vendor_dlkm size in hex: " size
+        x=$(echo "$size" | grep x | wc -l)
+        s=$(if [[ "$x" != '1' ]]; then echo $((16#$size)); else printf "%d\n" "$size"; fi)
+            fdtput -t x $DTB /partitions/vendor_dlkm size 0 "$size"
+            echo -e "\n\033[1m\033[33mvendor_dlkm size changed to $s byte\033[0m"
+        ;;
+    *)
+        exit 2
+        ;;
+esac
+    exit 0
+fi
+
+for dt in $(< "$tmp0"); do
+    ${DT[5]} "${dt}.dts" "${dt}.img" &>/dev/null
+    ${DT[6]} "${dt}.dtb" "${dt}.dts" &>/dev/null
+done
+
+if [[ -r 'DTB.gz' ]] && [[ -e "${head}.dts" ]]; then
+    cleanup
+    ${DT[4]} "$head"
+    ${DT[7]}
+    ${DT[8]}
+    ${DT[9]}
+else
+    cleanup
+    ${DT[4]} "$head"
+fi
+
+if [[ "$N" -eq '7' ]]; then
+    mod_super "$@"
+fi
+

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+#####################################
+# merge timestamp of sepolicy files #
+#####################################
+
+<< 'Description'
+****************************
+$1 - precompiled_sepolicy
+$2 - plat_sepolicy.cil
+$3 - system_ext_sepolicy.cil
+$4 - vendor_sepolicy.cil
+$5 - product_sepolicy.cil
+*****************************
+Is required because the build
+script monitors the changes
+to the sepolicy files based
+on the timestamp..
+*****************************
+Description
+
+if [[ -f "$1" ]]; then
+    for i in "$2" "$3" "$4" "$5"; do
+       touch -r "$1" "$i"
+    done
+    printf "%s\n" "Merge timespamp of $1"
+fi
+

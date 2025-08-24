@@ -39,13 +39,13 @@ $(IMG.IN).stamp.unpack: ingredients/$(IMG.BASE) $(IMG.IN).stamp.dir
 #
 # Функция добавляет необходимые зависимости в переменную DEPS.
 define IMG.UNPACK.EXT4
-$(if $(filter $1.PARTITION,$(IMG.COPY)),$(eval $(call IMG.UNPACK.EXT4_,$1)))\
+$(if $(filter $1.$(LOCAL_SUFFIX),$(IMG.COPY)),$(eval $(call IMG.UNPACK.EXT4_,$1)))\
 $(eval DEPS := $(DEPS) $(IMG.OUT).stamp.unpack-$1)
 endef
 
 define IMG.UNPACK.EXT4_
-IMG.EXT4 := $$(IMG.EXT4) $$(filter $1.PARTITION,$$(IMG.COPY))
-IMG.COPY := $$(filter-out $1.PARTITION,$$(IMG.COPY))
+IMG.EXT4 := $$(IMG.EXT4) $$(filter $1.$(LOCAL_SUFFIX),$$(IMG.COPY))
+IMG.COPY := $$(filter-out $1.$(LOCAL_SUFFIX),$$(IMG.COPY))
 
 # Штамп распаковки исходного образа ext4 зависит от файла образа раздела
 $$(IMG.OUT).stamp.unpack-$1: $$(IMG.IN)$1.PARTITION
@@ -56,7 +56,7 @@ $$(IMG.OUT).stamp.unpack-$1: $$(IMG.IN)$1.PARTITION
 	$$(call TOUCH,$$@)
 
 # Исходный образ ext4 зависит от штампа распаковки исходного образа
-$$(IMG.IN)$1.PARTITION: $$(IMG.IN).stamp.unpack
+$$(IMG.IN)$1.$(LOCAL_SUFFIX): $$(IMG.IN).stamp.unpack
 
 HELP.IMG += $$(call HELPL,clean-img-$1,Очистить распакованный образ $1)
 .PHONY: clean-img-$1

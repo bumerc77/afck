@@ -1,0 +1,3 @@
+/vendor/preinstall                   u:object_r:vendor_configs_file:s0
+/vendor/preinstall/settings          u:object_r:vendor_configs_file:s0
+/vendor/etc/init.\d/00-preinstall    u:object_r:vendor_configs_file

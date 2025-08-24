@@ -1,0 +1,72 @@
+#!/bin/bash
+
+###########################################
+#     compile sepolicy - AOSP 14/15       #
+###########################################
+
+if [[ -f "$1" ]]; then
+    system_ext="build/system_ext/etc/selinux"
+    product="build/product/etc/selinux"
+else
+    system_ext="build/system/system/system_ext/etc/selinux"
+    product="build/system/system/product/etc/selinux"
+fi
+
+# selinux
+system="build/system/system/etc/selinux"
+vendor="build/vendor/etc/selinux"
+odm="build/odm/etc/selinux"
+
+# mapping files
+version0="$system/mapping"
+version1="$system_ext/mapping"
+version2="$product/mapping"
+
+# Mapping version
+v="$(cat "$vendor"/plat_sepolicy_vers.txt)"
+# Sepolicy version for secilc = 30
+v1="30"
+
+compile_sepolicy () {
+if [[ -f "$odm/precompiled_sepolicy" || ! -f "$odm/precompiled_sepolicy" ]]; then
+    printf "\n%s\n" "compile sepolicy..."
+    rm -f "$odm"/precompiled_sepolicy
+    cat "$system"/plat_sepolicy.cil "$system_ext"/system_ext_sepolicy.cil \
+    "$product"/product_sepolicy.cil > sepolicy_new.cil
+    cat "$version0/${v}.cil" "$version1/${v}.cil" "$version2/${v}.cil" > "${v}_new.cil"
+    contrib/secilc -m -M true -G -N -c "$v1" -o \
+    "$odm"/precompiled_sepolicy \
+    sepolicy_new.cil \
+    "${v}_new.cil" \
+    "$vendor"/*.cil
+    rm -f -- *new.cil
+fi
+}
+
+gensha256() {
+    printf "update sha256sum:"
+    echo -e "\033[32msystem --> odm\033[0m"
+    cat "$system"/plat_sepolicy.cil "$version0/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$odm"/precompiled_sepolicy.plat_sepolicy_and_mapping.sha256
+    cat "$system"/plat_sepolicy.cil "$version0/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$system"/plat_sepolicy_and_mapping.sha256
+    echo -e "\033[32msystem_ext --> odm\033[0m"
+    cat "$system_ext"/system_ext_sepolicy.cil "$version1/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$odm"/precompiled_sepolicy.system_ext_sepolicy_and_mapping.sha256
+    cat "$system_ext"/system_ext_sepolicy.cil "$version1/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$system_ext"/system_ext_sepolicy_and_mapping.sha256
+    echo -e "\033[32mproduct --> odm\033[0m"
+    cat "$product"/product_sepolicy.cil "$version2/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$odm"/precompiled_sepolicy.product_sepolicy_and_mapping.sha256
+    cat "$product"/product_sepolicy.cil "$version2/${v}.cil" \
+    | sha256sum | cut -d' ' -f1 | tee "$product"/product_sepolicy_and_mapping.sha256
+}
+
+if [[ "$3" -ot "$2" && "$4" -ot "$2" && "$5" -ot "$2" && "$6" -ot "$2" ]]; then
+    echo -e " \n\033[32msepolicy files have not been changed, compiling is not necessary..\033[0m"
+    exit 0
+else
+    compile_sepolicy || exit 2
+    gensha256
+fi
+

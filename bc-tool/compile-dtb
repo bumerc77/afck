@@ -1,0 +1,71 @@
+#!/bin/bash
+
+##########################################
+#     compile single and multi dtb       #
+##########################################
+
+list="$(hexdump DTB | grep -c "0dd0 edfe")"
+offset="$(hexdump DTB | grep '0dd0 edfe' | cut -c 1-8 | sed -e 's/^0*//')"
+head="2048"
+
+# Check if dtb is extracted
+if [[ ! -f "${head}.$1" ]]; then
+    echo -e "\033[1m\033[33mplease run <make mod-$1!\033[0m>"
+    exit 0
+fi
+
+# cleanup extracted DTs
+function cleanup () {
+    printf "%s\n" "cleanup..."
+    find . `
+    `\( -name "$tmp" -or -name "*.dtb" -or -name "*.dts" \) `
+    `-exec rm -f {} \;
+}; trap cleanup EXIT
+
+# create r/w descriptors for multi-dtb
+if [[ "$list" -ne '0' ]]; then
+    tmp=$(mktemp tmp.XXXX)
+    exec {FD_W}>"$tmp"
+    exec {FD_R}<"$tmp"
+fi
+
+# write offsets to the w-descriptor
+if [[ "$list" -gt '1' ]]; then
+    for i in $offset; do
+       echo "$i" | awk '{print strtonum( "0x" $1 )}' >&$FD_W
+    done
+    echo -e "\ndtb offsets: \n$(cat <&$FD_R)\n"
+fi
+
+declare -A DT
+DT=(
+    [1]="dtTool/dtbTool -o DTB -s"  # combine dtb
+    [2]="dtc -I dts -O $2 -o"       # compile dtb
+    [3]="rm DTB.gz"                 # remove old dtb gz
+    [4]="gzip DTB"                  # compress dtb
+    [5]="mv DTB.gz DTB"             # rename new dtb gz
+)
+
+rm DTB
+
+# compile dtbs for multi-dtb / compile single-dtb
+if [[ "$list" -gt '1' ]]; then
+    for j in $(< "$tmp"); do
+       ${DT[2]} "${j}.$2" "${j}.$1" &>/dev/null
+    done
+else
+    ${DT[2]} DTB "${head}.dts" &>/dev/null
+    printf "\n%s\n" "compiling single-$2 done!"
+    exit 0
+fi
+
+# combine dtbs to multi-dtb and gzip it if it was gzipped before
+if [[ -r 'DTB.gz' ]] && [[ -e "${head}.$1" ]]; then
+    ${DT[1]} "$head"
+    ${DT[3]}
+    ${DT[4]}; printf "%s\n" "Compressing DTB..."
+    ${DT[5]}
+else
+    ${DT[1]} "$head"
+fi
+

@@ -18,9 +18,9 @@ if [ -z "$OUT" ] ; then
 	exit 1
 fi
 
-if [ $(id -u) != 0 ]; then
+if [ "$(id -u)" != '0' ]; then
 	# Сценарий работает только от имени администратора
-	exec sudo "$0" "$1" "$2" $(id -u):$(id -g)
+	exec sudo "$0" "$1" "$2" "$(id -u)":"$(id -g)"
 fi
 
 set -e
@@ -28,45 +28,45 @@ set -e
 # Если выходного каталога не существует, создаём
 test -d "$OUT" || mkdir -p "$OUT"
 # Путь к другим утилитам
-TOOLS_DIR=$(dirname $(readlink -f $0))
+TOOLS_DIR=$(dirname "$(readlink -f "$0")")
 # Название раздела
-PART=$(basename "$OUT")
+# PART=$(basename "$OUT")
 # Файл с сохранёнными uid/gid файлов
-STATS=$(dirname "$OUT")/${PART}_statfile.txt
+# STATS=$(dirname "$OUT")/${PART}_statfile.txt
 
 # Если образ в формате sparse, сперва преобразуем в raw формат
-read magic < <(od -Anone -N4 -tx1 "${IMG}")
+read -r magic < <(od -Anone -N4 -tx1 "${IMG}")
 if test "$magic" == "3a ff 26 ed" ; then
 	if ! test -e "${IMG}.raw" || test "$IMG" -nt "${IMG}.raw" ; then
 		echo "Converting sparse image $IMG to raw format ..."
-		$TOOLS_DIR/simg2img "$IMG" "${IMG}.raw"
+		"$TOOLS_DIR"/simg2img "$IMG" "${IMG}.raw"
 	fi
 	IMG="${IMG}.raw"
 fi
 
 TMP=$(mktemp -d ext4.XXXX)
-trap "set +e; umount $TMP &>/dev/null; rmdir $TMP" EXIT
-mount -o loop "$IMG" $TMP
+trap 'set +e; sleep 0.5 && umount "$TMP" &>/dev/null; rmdir "$TMP"' EXIT
+mount -o loop "$IMG" "$TMP"
 
-echo "Сохраняем режимы доступа к файлам в $STATS ..."
-find $TMP | while IFS= read fn ; do
-	test "$fn" = "$TMP" && continue
+#echo "Сохраняем режимы доступа к файлам в $STATS ..."
+#find $TMP | while IFS= read fn ; do
+#	test "$fn" = "$TMP" && continue
 	# Удаляем базовый каталог из имени файла, добавляем префикс по имени образа
-	rfn="${PART}/${fn/$TMP\/}"
-	test -z "$rfn" && continue
-	uid_gid_mode=$(stat -c "%u %g 0%a" "$fn")
-	caps=$($TOOLS_DIR/getcapn "$fn" 2>/dev/null || true)
-	if test -n "$caps" ; then
-		echo "$rfn $uid_gid_mode capabilities=$caps"
-	else
-		echo "$rfn $uid_gid_mode"
-	fi
-done > $STATS
+#	rfn="${PART}/${fn/$TMP\/}"
+#	test -z "$rfn" && continue
+#	uid_gid_mode=$(stat -c "%u %g 0%a" "$fn")
+#	caps=$($TOOLS_DIR/getcapn "$fn" 2>/dev/null || true)
+#	if test -n "$caps" ; then
+#		echo "$rfn $uid_gid_mode capabilities=$caps"
+#	else
+#		echo "$rfn $uid_gid_mode"
+#	fi
+#done > $STATS
 
-echo "Извлекаем файлы из $IMG ..."
-cp -dR --preserve=mode,links,xattr $TMP/. "$OUT"/
+echo "Extract files from $IMG ..."
+cp -dR --preserve=mode,links,xattr "$TMP"/. "$OUT"
 
 if test -n "$OWNER" ; then
-	chown $OWNER -R "$OUT"
-	chown $OWNER $STATS
+	chown "$OWNER" -R "$OUT"
+#	chown $OWNER $STATS
 fi

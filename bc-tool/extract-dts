@@ -1,0 +1,118 @@
+#!/bin/bash
+
+###########################################
+# extract/decompile single and multi dtb  #
+###########################################
+
+if ! [[ -f 'DTB' ]]; then
+    printf '\e[33m%s\n\e[0m\n' "Please unpack aml_upgrade_package!"
+    exit 1
+fi
+
+# checking for gzip compression
+if [[ "$(file DTB | grep -c "gzip")" -eq '1' ]]; then
+    printf "%s\n" "detected gzip compressed file..."
+    mv DTB DTB.gz; gzip -d -k DTB
+fi
+
+# checking the number of offsets
+list="$(hexdump DTB | grep -c "0dd0 edfe")"
+offset="$(hexdump DTB | grep '0dd0 edfe' | cut -c 1-8 | sed -e 's/^0*//')"
+head="2048"
+
+# cleanup extracted DTs
+function cleanup() {
+    printf "%s\n" "cleanup..."
+    find . `
+    `\( -name "DT" -or -name "*.img" \) `
+    `-exec rm -f {} \;
+}
+
+# create r/w descriptors for multi-dtb
+if [[ "$list" -ne '0' ]]; then
+    tmp="$(mktemp tmp.XXXX)"
+    exec {FD_W}>"$tmp"
+    exec {FD_R}<"$tmp"
+    trap 'rm "$tmp"' EXIT
+fi
+
+declare -A DT
+DT=(
+    [1]="dd if=DTB of=DT count=1 bs="  # dtb1+header
+    [2]="dd if=DT skip=1 bs="          # dtb1
+    [3]="dd if=DTB skip=1 count=1 bs=" # dtb2 dtb3 ...
+    [4]="dtc -I dtb -O dts -o"         # extract dts
+    [5]="dtc -I dts -O dtb -o"         # compile dtb
+)
+
+# write offsets to the w-descriptor
+if [[ "$list" -gt '1' ]; then
+    for i in $offset; do
+       echo "$i" | awk '{print strtonum( "0x" $1 )}' >&$FD_W
+    done
+    echo -e "\ndtb offsets: \n$(cat <&$FD_R)"
+fi
+
+# extract dt from multi-dtb
+if [[ "$list" -gt '1' ]]; then
+    extract_dt () {
+        for i in $(tail -n +2 < "$tmp"); do
+            ${DT[1]}"$i"
+            ${DT[3]}"$i" > "${i}.img"
+        for j in $head; do
+            ${DT[2]}"$j" > "${j}.img"
+        done
+        done
+}; fi
+
+case "$(hexdump DTB | grep '0dd0 edfe' | wc -l)" in
+    1)
+        printf "\n%s\n" "extract single-dtb..."
+        ;;
+    [2-9]|15)
+        printf "\n%s\n" "extract multi-dtb..."
+        extract_dt
+        ;;
+    *)
+        printf "\n%s\n" "unknown dtb type..."
+        exit 2
+        ;;
+esac
+
+# trim the multi-dtb header for DTC
+# add current super.img.raw size to part_table
+if [[ -f "$1" ]] && [[ "$#" -gt '0' ]]; then
+  dtdump="$(hexdump $2 | grep -c "0dd0 edfe")"
+    case "$dtdump" in
+        1)
+            cp "$2" "$3"
+            ;;
+        [2-9]|15)
+            dd if="$2" skip=1 bs=2048 > "$3" && sync
+            ;;
+	*)
+            mv "$2" "$2".gz; gzip -d "$2"
+            dd if="$2" skip=1 bs=2048 > "$3" && sync
+            ;;
+esac
+
+if [[ -f 'DTB' ]]; then
+    imgsize="$(fdtget -t x "$3" /partitions/"$4" size | sed -e 's/  */x/g')"
+    echo "put ${4}.img size ($imgsize) to $5"
+    fdtput -t x "$5" /partitions/"$4" size 0 "$imgsize"; rm "$3"
+fi
+    exit 0
+fi
+
+# extract multi-dtb or single-dtb
+if [[ "$#" -eq '0' ]] && [[ "$list" -gt '1' ]]; then
+    for j in $(< "$tmp"); do
+       ${DT[4]} "${j}.dts" "${j}.img" &>/dev/null
+       ${DT[5]} "${j}.dtb" "${j}.dts" &>/dev/null
+    done
+else
+    ${DT[4]} "${head}.dts" DTB &>/dev/null
+fi
+
+cleanup
+

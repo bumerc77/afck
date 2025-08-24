@@ -30,6 +30,8 @@ RM = rm -f "$1"
 RMDIR = rm -rf "$1"
 # Копировать файл $1 в $2
 CP = cp -dP --preserve=mode,links,xattr "$1" "$2"
+#
+COPY = cp
 # Переминовать/переместить файл $1 в $2
 MV = mv -f "$1" "$2"
 # Создание символической ссылки
@@ -68,8 +70,36 @@ endif
 
 # ---------- # Каталоги и утилиты # ---------- #
 
-# Базовый каталог для генерируемых файлов
+# Base directory for generated files
 OUT = out/$(TARGET)/
+# bc-tool stamp dir
+STAMPDIR = $(BCT.DIR)stamp/
+# bc-tool dir
+BCT.DIR = bc-tool/
+# bc-tool out
+BCT.OUT = bc-tool/out
+# use home dir for build srcipp
+HOME.DIR = $(PWD)/$(BCT.DIR)build/
+# build dir
+BUILD.DIR = $(BCT.DIR)build/
+# odm dir
+ODM = $(BUILD.DIR)odm/
+# product dir
+ifneq ($(TARGET_HAS_DYNAMIC_PART),true)
+PRODUCT = $(BUILD.DIR)system/system/product/
+else
+PRODUCT = $(BUILD.DIR)product/
+endif
+# vendor dir
+VENDOR = $(BUILD.DIR)vendor/
+# vendor_dlkm dir
+VENDOR_DLKM = $(BUILD.DIR)vendor_dlkm/
+# system dir
+SYSTEM = $(BUILD.DIR)system/
+# system_ext dir
+SYSTEM_EXT = $(BUILD.DIR)system_ext/
+# partition contexts
+SELINUX = $(BUILD.DIR)selinux/
 # Каталог с файлами для целевой платформы
 TARGET.DIR = build/$(TARGET)/
 # Функция для добавления описания $2 цели $1
@@ -83,6 +113,7 @@ else
 HOST.OS = $(call LOWCASE,$(shell uname -s))
 endif
 endif
+
 # Каталог с утилитами для текущей ОС
 TOOLS.DIR = tools/$(HOST.OS)/
 

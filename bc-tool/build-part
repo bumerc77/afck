@@ -1,0 +1,142 @@
+#!/bin/bash
+
+##########################################
+#     build partitions - AOSP 14/15      #
+#     system-as-root scenario            #
+##########################################
+
+OUT="${2}.PARTITION"
+TIME="$(date +"%s")"
+BLOCKSIZE="4096"
+FSC="${2}_fs_config.ini"
+SLC="${2}_file_contexts"
+SLCB="${2}_file_contexts.bin"
+
+## number-of-inodes (mke2fs -N ..)
+N_I0=$(find "$1"/"$2" | wc -l )
+if ! [[ "$2" == 'odm' ]]; then
+    N_I1=$(( N_I0-=0 ))
+else
+    N_I1=$(( N_I0+=4 ))
+fi
+
+if [[ ! -d "$1" ]]; then
+    printf "$1 source folder does not exist\nplease run <make mod-unpack>"
+    exit 0
+fi
+
+if [[ "$4" -nt "$3"|| "$5" -nt "$3" || "$6" -nt "$3" || "$7" -nt "$3" ]]; then
+    printf "\n%s\n" "sepolicy files was modified.."
+    echo -e "\033[1m\033[33mplease apply <mod-sepolicy-pie>\033[0m\n"
+    exit 2
+fi
+
+if [[ -f "out/$OUT" ]]; then
+    printf "\n%s\n" "removing previous $1..."
+    find . `
+    `\( -wholename "out/$2*" \) `
+        `-exec rm -f {} \;
+fi
+
+declare DIR="$1/$2/lost+found"
+for directory in "$DIR"; do
+    if [[ -d "$directory" ]]; then
+        printf "%s\n" "remove $DIR"; rm -r "$DIR"
+    else
+        printf "%s\n" "$DIR is already removed!"
+    fi
+done
+
+if test -e 'DT'; then
+    printf "\n%s\n" "dtb check ok"
+else
+    dtdump="$(hexdump DTB | grep -c "0dd0 edfe")"
+    case "$dtdump" in
+        1)
+            printf "\n%s\n" "single-dtb detected..."
+            mv DTB DT
+            ;;
+        [2-9]|15)
+            printf "\n%s\n" "multi-dtb detected..."
+            dd if=DTB skip=1 bs=2048 > DT && sync
+            ;;
+        *)
+            printf "\n%s\n" "gziped-dtb detected..."
+            mv DTB DTB.gz; gzip -d DTB
+            dd if=DTB skip=1 bs=2048 > DT && sync
+            ;;
+    esac
+fi
+
+if [[ "$?" -eq '0' ]]; then
+    printf "calculate IMG size"
+    PARTSIZE="$(fdtget -t u DT /partitions/"$2" size | sed 's/0 //')"
+    SIZE="$((PARTSIZE / BLOCKSIZE))"
+    printf "size: %d\n" "$SIZE"
+fi
+
+if ! [[ -d 'out' ]]; then
+    mkdir out
+fi
+
+if [[ -d 'out' ]]; then
+    printf "\n%s\n" "building..."
+    printf "%s\n" "create ext4 fs..."
+    dd if=/dev/zero of=out/"$OUT" bs="$BLOCKSIZE" count="$SIZE"; sync && contrib/mke2fs -t ext4 out/"$OUT"
+    printf "check uuid hash"
+    UUID_HASH="$(tune2fs -l out/"$OUT" | grep "UUID\|Hash Seed")"
+    UUID="$(echo $UUID_HASH | awk '{print $(NF/2)}')"
+    HASH="$(echo $UUID_HASH | awk -F ":" '{print $NF}' | sed 's/ //')"
+    printf "%s\n" "Filesystem UUID: $UUID"
+    printf "%s\n" "Directory Hash Seed: $HASH"
+fi
+
+MKE2FS_ENV="MKE2FS_CONFIG=$(realpath contrib/mke2fs.conf)"
+printf "\n%s\n" "$MKE2FS_ENV"
+env "$MKE2FS_ENV" | >/dev/null
+
+case "$2" in
+    odm|vendor)
+        printf "\n%s\n" "set android_sparse flag..."
+        yes '' | contrib/mke2fs -O ^has_journal -L "$2" "$N_I1" -I 256 -M /"$2" -m 0 -U "$UUID" -E android_sparse,hash_seed="$HASH" -t ext4 -b "$BLOCKSIZE" out/"$OUT" "$SIZE"
+    ;;
+    system)
+        printf "\n%s\n" "set android_sparse flag..."
+        yes '' | contrib/mke2fs -O ^has_journal -L / "$N_I1" -I 256 -M / -m 0 -U "$UUID" -E android_sparse,hash_seed="$HASH" -t ext4 -b "$BLOCKSIZE" out/"$OUT" "$SIZE"
+    ;;
+esac
+
+if [[ "$2" != 'system' ]]; then
+    printf "%s\n" "generate $FSC"
+    sudo bin/generate_"${2}_fs_config.sh" "$2" | tee -a out/"$FSC" >/dev/null
+    sed -i '1s/'"$2"'.\{,1\}//g' out/"$FSC"
+else
+    printf "%s\n" "generate $FSC"
+    sudo bin/generate_root_fs_config.sh "$2" | tee -a out/"$FSC" >/dev/null
+fi
+
+if [[ "$2" != 'system' ]]; then
+    printf "%s\n" "compile $SLCB"
+    cat "$1"/selinux/*contexts > out/"$SLC" && { contrib/sefcontext_compile -o out/"$SLCB" out/"$SLC"; sync; }
+else
+    printf "%s\n" "compile $SLCB"
+    cat "$1"/selinux/plat_file_contexts \
+    "$1"/selinux/product_file_contexts \
+    "$1"/selinux/"$2"_ext_file_contexts > out/"$SLC" && { contrib/sefcontext_compile -o out/"$SLCB" out/"$SLC"; sync; }
+fi
+
+case "$2" in
+    odm|vendor)
+        printf "\n%s\n" "create a sparse img..."
+        contrib/e2fsdroid -T "$TIME" -C out/"$FSC" -B out/"$2".map -S out/"$SLCB" -f "$1"/"$2" -a /"$2" out/"$OUT"
+    ;;
+    system)
+        printf "\n%s\n" "create a sparse img..."
+        contrib/e2fsdroid -T "$TIME" -C out/"$FSC" -B out/"$2".map -S out/"$SLCB" -f "$1"/"$2" -a / out/"$OUT"
+    ;;
+esac
+
+if [[ -s "out/$OUT" ]]; then
+    echo -e "\n\033[1m\033[32m$1 $OUT successfull!\033[0m" || exit 2
+fi
+

@@ -1,15 +1,12 @@
-HELP = Автоматическая установка предустановленных приложений при первой загрузке
+# DISABLED = yes
 
-# Применяем мод только после мода init.d
+HELP = Automatic installation of pre-installed applications on first boot
+
+# We apply the mod only after the mod init.d
 DEPS += $(STAMP.mod-init.d)
 
-$(call IMG.UNPACK.EXT4,vendor)
-
 define INSTALL
-	mkdir -p $/vendor/preinstall/settings
-	cp -a $(DIR)/00-preinstall $/vendor/etc/init.d
-	tools/img-perm -m 0755 -c u:object_r:vendor_configs_file:s0 \
-		$/vendor/preinstall \
-		$/vendor/preinstall/settings \
-		$/vendor/etc/init.d/00-preinstall
+	mkdir -p $(VENDOR)preinstall/settings
+	cp -a $(DIR)/00-preinstall $(VENDOR)etc/init.d
+	cat $(DIR)contexts >> $(SELINUX)vendor_file_contexts
 endef

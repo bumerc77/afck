@@ -1,0 +1,162 @@
+#!/bin/bash
+
+##########################################
+#   build dynamic partitions - AOSP/15   #
+##########################################
+
+IMG="${2}.IMG"
+IMGRAW="${2}.img"
+TIME="$(date +"%s")"
+BLOCKSIZE="4096"
+FSC="${2}_fs_config.ini"
+SLC="${2}_file_contexts"
+SLCB="${2}_file_contexts.bin"
+
+## number-of-inodes (mke2fs -N ..)
+N_I0=$(find "$1"/"$2" | wc -l )
+if ! [[ "$2" == 'odm' ]]; then
+    N_I1=$(( N_I0+=2 ))
+else
+    N_I1=$(( N_I0+=4 ))
+fi
+
+if [[ ! -d "$1" ]]; then
+    printf "\n%s\n" "$1 source folder does not exist\nplease run <make mod-unpack-super>"
+    exit 2
+fi
+
+if [[ "$5" -nt "$4" || "$6" -nt "$4" || "$7" -nt "$4" || "$8" -nt "$4" ]]; then
+    printf "\n" "sepolicy files was modified.."
+    echo -e "\033[1m\033[33mplease apply <mod-sepolicy-dynamic>\033[0m\n"
+    exit 2
+fi
+
+if [[ -f "out/$IMGRAW" ]]; then
+    printf "\n%s\n" "removing previous $1..."
+    find out/ -name "$2*" -exec rm -f {} +
+fi
+
+shrink_fs() {
+    e2fsck -p out/"$IMGRAW" && \
+    resize2fs -M out/"$IMGRAW"
+}
+
+declare DIR="$1/$2/lost+found"
+for directory in "$DIR"; do
+    if [ -d "$directory" ]; then
+        printf "\n%s\n" "remove $DIR"; rm -r "$DIR"
+    else
+        printf "\n%s\n" "$DIR is already removed!"
+    fi
+done
+
+if test -e 'DT'; then
+    printf "\n%s\n" "dtb check ok"
+else
+    dtdump="$(hexdump DTB | grep -c "0dd0 edfe")"
+    case "$dtdump" in
+        1)
+            printf "\n%s\n" "single-dtb detected..."
+            cp DTB DT
+            ;;
+        [2-9]|15)
+            printf "\n%s\n" "multi-dtb detected..."
+            dd if=DTB skip=1 bs=2048 > DT && sync
+            ;;
+        *)
+            printf "\n%s\n" "gziped-dtb detected..."
+            mv DTB DTB.gz; gzip -d DTB
+            dd if=DTB skip=1 bs=2048 > DT && sync
+            ;;
+    esac
+fi
+
+if [[ "$?" -eq '0' ]]; then
+    printf "calculate IMG size"
+    PARTSIZE="$(fdtget -t u part_table /partitions/"$2" size | sed 's/0 //')"
+    SIZE="$PARTSIZE"
+    COUNT="$((PARTSIZE / BLOCKSIZE))"
+    printf "size: %d\n" "$SIZE"
+fi
+
+if ! [[ -d 'out' ]]; then
+    mkdir out
+fi
+
+if [[ -d 'out' ]]; then
+    printf "\n%s\n" "building $IMGRAW"
+    printf "%s\n" "####################"
+    printf "%s\n" "creating dummy img"
+    dd if=/dev/zero of=out/"$IMG" bs="$BLOCKSIZE" count="$COUNT"; sync
+    contrib/mke2fs -t ext4 out/"$IMG"
+    printf "%s\n" "check uuid hash"
+    UUID_HASH="$(tune2fs -l out/"$IMG" | grep "UUID\|Hash Seed")"
+    UUID="$(echo $UUID_HASH | awk '{print $(NF/2)}')"
+    HASH="$(echo $UUID_HASH | awk -F ":" '{print $NF}' | sed 's/ //')"
+    printf "%s\n" "Filesystem UUID: $UUID"
+    printf "%s\n" "Directory Hash Seed: $HASH"
+fi
+
+declare -A IC
+IC=(
+    [0]="uninit_bg"
+    [1]="^has_journal,^resize_inode,^64bit,^metadata_csum,^flex_bg"
+)
+
+MKE2FS_ENV="MKE2FS_CONFIG=$(realpath contrib/mke2fs.conf)"
+printf "\n%s\n" "$MKE2FS_ENV"
+env "$MKE2FS_ENV" | > /dev/null
+
+case "$2" in
+    system_ext|odm|product|vendor|vendor_dlkm)
+        yes '' | contrib/mke2fs -O ${IC[0]},${IC[1]} -L "$2" -I 256 -M /"$2" -N "$N_I1" -m 0 -U "$UUID" -E android_sparse,hash_seed="$HASH" -t ext4 -b "$BLOCKSIZE" out/"$IMG" "$COUNT"
+        ;;
+    system)
+        yes '' | contrib/mke2fs -O ${IC[0]},${IC[1]} -L / -I 256 -M / -N "$N_I1" -m 0 -U "$UUID" -E android_sparse,hash_seed="$HASH" -t ext4 -b "$BLOCKSIZE" out/"$IMG" "$COUNT"
+        ;;
+esac
+
+if [[ "$2" != 'system' ]]; then
+    printf "%s\n" "generate $FSC"
+    sudo bin/generate_"${2}_fs_config.sh" "$2" | tee -a out/"$FSC" >/dev/null
+    sed -i '1s/'"$2"'.\{,1\}//g' out/"$FSC"
+else
+    printf "%s\n" "generate $FSC"
+    sudo bin/generate_root_fs_config.sh "$2" | tee -a out/"$FSC" >/dev/null
+fi
+
+if [[ "$2" != 'system' ]]; then
+    printf "%s\n" "compile $SLCB"
+    cat "$1"/selinux/*contexts > out/"$SLC" && { contrib/sefcontext_compile -o out/"$SLCB" out/"$SLC"; sync; }
+else
+    printf "%s\n" "compile $SLCB"
+    cp "$1"/selinux/plat_file_contexts out/"$SLC" && { contrib/sefcontext_compile -o out/"$SLCB" out/"$SLC"; sync; }
+fi
+
+case "$2" in
+    system_ext|odm|product|vendor|vendor_dlkm)
+        contrib/e2fsdroid -T "$TIME" -C out/"$FSC" -B out/"$2".map -S out/"$SLCB" -f "$1"/"$2" -a /"$2" out/"$IMG"
+            if ! [ "$?" == '0' ]; then
+                printf "\n%s\n" "e2fsdroid: Partition size is too small, please run <make mod-resize-super>"
+                exit 1
+            fi
+        ;;
+    system)
+        contrib/e2fsdroid -T "$TIME" -C out/"$FSC" -B out/"$2".map -S out/"$SLCB" -f "$1"/"$2" -a / out/"$IMG"
+            if ! [ "$?" == '0' ]; then
+                printf "\n%s\n" "e2fsdroid: Partition size is too small, nplease run <make mod-resize-super>"
+                exit 1
+            fi
+        ;;
+esac
+
+if [[ -f "out/$IMG" ]]; then
+    simg2img out/"$IMG" out/"$IMGRAW"
+    rm out/"$IMG"
+    shrink_fs
+fi
+
+if [[ -s "out/$IMGRAW" ]]; then
+    echo -e "\033[1m\033[32m$1 $IMGRAW successfull!\033[0m" || exit 2
+fi
+

@@ -1,14 +1,14 @@
-HELP = Добавить автозапуск скриптов из /system/etc/init.d/
+# DISABLED = yes
+
+HELP = add init.d support
 
 $(call IMG.UNPACK.EXT4,vendor)
-$(call IMG.UNPACK.EXT4,system)
 
 define INSTALL
-	mkdir -p $/vendor/etc/init.d
-	mkdir -p $/system/etc/init.d
-	cp $(DIR)init.d.rc $/vendor/etc/init/
-	cp $(DIR)run-init.d $/vendor/bin/
-	tools/img-perm -b $/ -f $(DIR)init.d.perm
+	mkdir -p $(VENDOR)etc/init.d
+	cp $(DIR)init.d.rc $(VENDOR)etc/init
+	cp $(DIR)run-init.d $(VENDOR)bin
+	cat $(DIR)contexts >> $(SELINUX)vendor_file_contexts
 endef
 
 define DESC

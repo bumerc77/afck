@@ -24,7 +24,8 @@ MOD := $$(basename $$(notdir $1))
 # Переменная DIR содержит путь к каталогу мода
 DIR := $$(dir $1)
 # Файл штампа готовности мода
-STAMP := $$(IMG.OUT).stamp.mod-$$(MOD)
+# STAMP := $$(IMG.OUT).stamp.mod-$$(MOD)
+STAMP := $$(STAMPDIR).stamp.mod-$$(MOD)
 # Файлы, от которых зависит мод
 DEPS := $$(wildcard $$(DIR)*)
 # Для упрощения, базовый каталог, куда распаковываются разделы

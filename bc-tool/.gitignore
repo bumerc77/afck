@@ -1,0 +1,8 @@
+out
+build
+stamp
+*.dts
+*.dtb
+DT
+DTB
+test/*.txt

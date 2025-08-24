@@ -20,7 +20,6 @@ run_parts() {
 	done
 }
 
-run_parts vendor
 run_parts system
 
 setprop init.svc.initd stopped

@@ -1,0 +1,57 @@
+#!/bin/bash
+
+#########################
+#   build super only    #
+#########################
+
+# Delete stock partitions in afck/out/$(DEVICE)/device/$(VARIANT)/img-unpack/ to save space on HDD
+del_stock_img () {
+    while true; do
+        read -r -p "Do you want to remove stock partitions? Enter (Y/y) to continue, (N/n) to cancel: "
+        case "$REPLY" in
+            [Yy])
+                find "$1" -name "*.$2" -exec rm -f {} +
+                printf "\n%s\n" "stock partitions removed..."
+                ;;
+            [Nn])
+                return 0
+                ;;
+            *)
+                printf "unknown option: %s\n" "$REPLY"
+                continue
+                ;;
+        esac
+    break
+done
+}
+
+# $3 = bc-tool/out
+# $4 = super.img
+if ! [[ -d 'out' ]]; then
+    mkdir out
+elif [[ -e "$3/$4" ]]; then
+    printf "%s\n" "remove $4..."
+    rm -f "$3/$4"
+fi
+
+# fill super.img with stock partitions that not modified by mod-<partition>-dynamic
+if test "$(find "$1" -name "*.$2")" == ""; then
+    exit 0
+else
+    cd "$1" || exit
+    for img0 in *."$2"; do
+        case "$img0" in
+            "$img0")
+                if [[ ! -e "$3/$img0" ]]; then
+                    printf "%s\n" "copy $img0 to $3"
+                    cp "$img0" "$3" && sync
+                else
+                    printf "%s\n" "skip $img0, already exists"
+                fi
+                ;;
+        esac
+    done
+fi
+
+del_stock_img "$@"
+

@@ -1,0 +1,100 @@
+#!/bin/bash
+
+##########################
+#    unpack super.img    #
+##########################
+
+IMG="$1"
+OUT="$2"
+
+PLATFORM_TOOLS="$(readlink -f platform_tools)"
+export PLATFORM_TOOLS
+
+mod_resize_super () {
+while true; do
+    printf '\n'
+    read -r -p "ATTENTION: You have to put the super.img size to DTB, press (Y/y) to continue, (N/n) to cancel: "
+    case "$REPLY" in
+        [Yy]*)
+            make -C ../ mod-resize-super
+            ;;
+        [Nn]*)
+            return 0
+            ;;
+        *)
+            printf "unknown option: %s\n" "$REPLY"
+            continue
+            ;;
+    esac
+    break
+done
+}
+
+if ! [[ -f "$OUT""$IMG.raw" ]]; then
+    simg2img "$OUT""$IMG" "$OUT""$IMG".raw
+fi
+
+if [ -f "$OUT""$IMG".raw ]; then
+    "$PLATFORM_TOOLS"/lpunpack "$OUT""$IMG".raw "$OUT" &>/dev/null
+fi
+
+super_size=$(stat -c %s "$2""$IMG".raw)
+
+# Fill partition table
+(
+    if test "$(find "$2" -name "*.img" -o -name "*.raw")"; then
+        cd "$2" || exit
+        for img0 in *.img *.raw; do
+            case "$img0" in
+                "$img0")
+                    if [[ -f "$img0" ]]; then
+                        part=`stat -c %s "$img0"`
+                    if [[ "$img0" == "`ls *.raw`" ]]; then
+                        name=`echo "$img0" | sed 's/.\{14\}$//'`
+                    else
+                        name=`echo "$img0" | sed 's/.\{4\}$//'`
+                    fi
+                        printf '%s\n' "put $img0 size ($part byte) to ${10}"
+                        fdtput -t x "${10}" /partitions/"$name" size 0 $(printf '%x\n' "$part")
+                    else
+                        printf '\e[31m%s\n\e[0m' "error: $img0 not found!" >&2
+                        exit 1
+                    fi
+                    ;;
+            esac
+        done
+    fi
+)
+
+check_dtb () {
+    if test -f 'DT'; then
+        printf '\n%s\n' "dtb check ok.."
+    else
+        local dtdump="$(hexdump DTB | grep -c "0dd0 edfe")"
+        case "$dtdump" in
+            1)
+                printf '\n%s\n' "single-dtb detected..."
+                mv DTB DT
+                ;;
+            [2-9]|15)
+                printf '\n%s\n' "multi-dtb detected..."
+                dd if=DTB skip=1 bs=2048 > DT && sync
+                ;;
+            *)
+                printf '\n%s\n' "gziped-dtb detected..."
+                mv DTB DTB.gz; gzip -d -k -q DTB
+                dd if=DTB skip=1 bs=2048 > DT && sync
+                ;;
+        esac
+    fi
+}; check_dtb
+
+check_dtb=$?
+if [[ "$check_dtb" -eq '0' ]]; then
+    PARTSIZE="$(fdtget -t u DT /partitions/"$9" size | sed 's/0 //')"
+fi
+
+if ! [[ "$super_size" == "$PARTSIZE" ]]; then
+    mod_resize_super "$@" || exit
+fi
+
