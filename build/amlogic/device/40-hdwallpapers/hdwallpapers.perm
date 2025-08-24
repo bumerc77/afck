@@ -1,0 +1,2 @@
+vendor/Wallpapers		0	0	0755	u:object_r:vendor_file:s0
+vendor/etc/init.d/00-wallpapers	0	0	0755	u:object_r:vendor_configs_file:s0
