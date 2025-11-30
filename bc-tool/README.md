@@ -169,12 +169,12 @@ make clean
 LINEAGE_ZIP = ingredients/lineage-22.2-20251130-nightly-m5-signed.zip
 
 # Download lineage <aml_install_package>
-# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/aml_install_package.img -P ingredients/
-wget https://mirrorbits.lineageos.org/full/m5/20251130/aml_install_package.img -P ingredients/
+# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/<aml_install_package> -P ingredients/ && echo "<sha256-sum> ingredients/<aml_install_package>" | sha256sum -c
+wget https://mirrorbits.lineageos.org/full/m5/20251130/aml_install_package.img -P ingredients/ && echo "d35d90b1f3a98311951d242a63c7281e3c977518578332234f80a2a45c6633d6  ingredients/aml_install_package.img" | sha256sum -c
 
 # Download <lineage-*.zip>
-# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/lineage-22.2-<build-date>-nightly-<device>-signed.zip -P ingredients/ | echo "<sha256-sum> ingredients/lineage-22.2-<build-date>-nightly-<device>-signed.zip" | sha256sum -c
-wget https://mirrorbits.lineageos.org/full/m5/20251130/lineage-22.2-20251130-nightly-m5-signed.zip -P ingredients/ | echo "9028ed0c3b8869cc80eb280bf1a45677dcdeb12e0017b709dc22e7689479410b ingredients/lineage-22.2-20251130-nightly-m5-signed.zip" | sha256sum -c
+# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/lineage-22.2-<build-date>-nightly-<device>-signed.zip -P ingredients/ && echo "<sha256-sum> ingredients/lineage-22.2-<build-date>-nightly-<device>-signed.zip" | sha256sum -c
+wget https://mirrorbits.lineageos.org/full/m5/20251130/lineage-22.2-20251130-nightly-m5-signed.zip -P ingredients/ && echo "db36fcf5f7478f2f27f29d8f700901e1f9ccc5240de2a7229284e40081e5e715 ingredients/lineage-22.2-20251130-nightly-m5-signed.zip" | sha256sum -c
 
 # Extract <aml_install_package> and <lineage-*.zip>
 make mod-extract-zip
