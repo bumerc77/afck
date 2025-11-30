@@ -1,0 +1,87 @@
+#!/bin/bash
+
+######################################
+#  extract lineage-*.zip - LOS-22.x  #
+######################################
+
+super=`echo "$1" | sed 's/.\{10\}$//'`
+
+# Extract *.zip
+if [[ -f "$2" ]]; then
+    cd "$3"
+    printf "%s\n" "Unzip $2 ..."
+    unzip "$2" *.br *.dat *.list vbmeta.img >/dev/null
+else
+    printf "%s\n" "$2 not aviable, please download it."
+    exit 1
+fi
+
+# Get sdat2img
+get_sdat2img() {
+    git clone --depth 1 https://github.com/xpirt/sdat2img
+}
+
+sfx0="PARTITION"
+sfx1="img"
+sfx2="raw"
+
+# Decompress *.br files
+if test "$(find . -name "*.br" -type f)"; then
+    for img in *.br; do
+        case "$img" in
+            "$img")
+                if [[ -f "$img" ]]; then
+                    name=`echo "$img" | sed 's/.\{3\}$//'`
+                    printf "%s\n" "Decompress $img ..."
+                    brotli --decompress --output="$name" "$img" >/dev/null
+                else
+                    printf '\e[31m%s\n\e[0m' "error: $img not found!" >&2
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+    extracted='1'
+    rm vbmeta.${sfx0}
+    mv vbmeta.${sfx1} vbmeta.${sfx0}
+    mv "$1" "$1.${sfx2}"
+    cd "$4"
+fi
+
+if [[ ! -d sdat2img ]]; then
+    printf "%s\n" "Clone sdat2img ..."
+    get_sdat2img
+fi
+
+# Convert *.dat to *.img
+if [[ "$extracted" == '1' ]]; then
+    cd "$3"
+    if test "$(find . -name "*.new.dat" -type f)"; then
+        for img in *.new.dat; do
+            case "$img" in
+                "$img")
+                    if [[ -f "$img" ]]; then
+                        name=`echo "$img" | sed 's/.\{8\}$//'`
+                        printf "%s\n" "Convert $img ..."
+                        python "$5" ${name}.transfer.list "$img" "${name}.${sfx1}" >/dev/null
+                    else
+                        printf '\e[31m%s\n\e[0m' "error: $img not found!" >&2
+                        exit 1
+                    fi
+                    ;;
+            esac
+        done
+        converted='1'
+        find . \( -name "*.br" -o -name "*.dat" -o -name "*.list" -o -name "misc.*" \) -exec rm -f {} \;
+        rm -rf {*INF,install}
+        sed -i '/misc/,+2d' image.*
+    fi
+fi
+
+# Write super.img size to partition table
+if [[ "$converted" == '1' ]]; then
+    device_size=`fdtget -t u meson1.* /partitions/"$super" size | sed 's/0 //'`
+    printf '%s\n' "put $super size: $device_size byte to $6"
+    fdtput -t x "$6" /partitions/"$super" size 0 `printf '%x\n' "$device_size"`
+fi
+

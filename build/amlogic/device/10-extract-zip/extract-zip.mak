@@ -1,17 +1,16 @@
 # DISABLED = yes
 
-HELP = $(MOD) $(LOCAL_SUFFIX) Android-14/15
+HELP = $(MOD), LineageOS-22.1/22.2 ZIP-Install-Package
 
 DEPS += $(IMG.IN).stamp.unpack
 
 define INSTALL
-	@echo -e "\n\033$(C.YELLOW)Copy dtb:\033[0m"
-	$(COPY) $(LOCAL_DTB) $(BCT.DIR)DTB && sync
+	@echo -e "\n\033$(C.YELLOW)$(MOD):\033[0m"
+	@cd $(BCT.DIR) && ./$(MOD) $(SUPER) $(PWD)/$(LINEAGE_ZIP) \
+	$(PWD)/$(IMG.IN) $(PWD)/$(BCT.DIR) $(SDAT2IMG)sdat2img.py $(PART.TABLE)part_table
 
-	@echo -e "\n\033$(C.YELLOW)Fill partition table:\033[0m"
-	@cd $(BCT.DIR) && ./$(MOD) $(SUPER) $(PWD)/$(IMG.IN) \
-	odm vendor product system system_ext vendor_dlkm super \
-	$(PWD)/$(BCT.DIR)part_table
+	@echo -e "\n\033$(C.YELLOW)Copy dtb:\033[0m"
+	$(COPY) $(LOCAL_DTB) $(BCT.DIR)DTB
 
 	mkdir -p $(SELINUX)
 
@@ -29,8 +28,8 @@ define INSTALL
 	$(COPY) $(FILE_CONTEXTS.system_ext) $(SELINUX)
 	$(COPY) $(FILE_CONTEXTS.system) $(SELINUX)
 
-	@cat $(DIR)system_contexts >> $(SELINUX)plat_file_contexts
-	@cat $(DIR)vendor_contexts >> $(SELINUX)vendor_file_contexts
+	@cat $(TARGET.DIR)40-unpack-super/system_contexts >> $(SELINUX)plat_file_contexts
+	@cat $(TARGET.DIR)40-unpack-super/vendor_contexts >> $(SELINUX)vendor_file_contexts
 
 	@echo -e "\n\033$(C.YELLOW)Filesystem check:\033[0m"
 	$(INSPECT_SCR_STOCK) $(IMG.IN)odm.$(LOCAL_SUFFIX) $(IMG.IN)$(SUPER_RAW)
@@ -57,6 +56,5 @@ define INSTALL
 endef
 
 define DESC
-* This modification extracts a super IMG
-* into the specified directory
+* Extract lineage-*.zip
 endef

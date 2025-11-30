@@ -7,7 +7,7 @@ VARIANT = $(A.CN)
 # Platform (ro.product.device)
 PRODEV = g12a
 # IMG package name
-IMG.BASE = aml_upgrade_package.img
+IMG.BASE ?= aml_upgrade_package.img
 # vendor partition size (Android 8)
 EXT4.SIZE.vendor=335544320
 

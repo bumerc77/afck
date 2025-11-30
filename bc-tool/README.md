@@ -28,6 +28,7 @@ What is needed
 - android-tools-fsutils
 - device-tree-compiler (DTC)
 - gawk
+- brotli
 
 ---------------------------------------
 - Install
@@ -35,13 +36,11 @@ What is needed
 
 - clone afck-Project
 
-https://github.com/bumerc77/afck.git
+git clone https://github.com/bumerc77/afck.git
 
 - Install packages
 
-sudo apt install android-sdk-libsparse-utils android-sdk-ext4-utils gawk
-
-sudo apt install device-tree-compiler
+sudo apt install device-tree-compiler android-sdk-libsparse-utils android-sdk-ext4-utils gawk brotli
 
 =========================================
 # HOW TO USE #
@@ -162,7 +161,29 @@ If you want to run mod-super, mod-partition-pie or mod-<partition> repeatedly, t
 - Cleanup 'out/amlogic/device/lineage/img-unpack' directory
 
 make clean
+
 ------------------------------------------
+- Convert <lineage-*.zip> to <aml_upgrade_package.img>
+
+# Define your *.zip package in local-config.mak, e.g
+LINEAGE_ZIP = ingredients/lineage-22.2-20251130-nightly-m5-signed.zip
+
+# Download lineage <aml_install_package>
+# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/aml_install_package.img -P ingredients/
+wget https://mirrorbits.lineageos.org/full/m5/20251130/aml_install_package.img -P ingredients/
+
+# Download <lineage-*.zip>
+# wget https://mirrorbits.lineageos.org/full/<device>/<build-date>/lineage-22.2-<build-date>-nightly-<device>-signed.zip -P ingredients/ | echo "<sha256-sum> ingredients/lineage-22.2-<build-date>-nightly-<device>-signed.zip" | sha256sum -c
+wget https://mirrorbits.lineageos.org/full/m5/20251130/lineage-22.2-20251130-nightly-m5-signed.zip -P ingredients/ | echo "9028ed0c3b8869cc80eb280bf1a45677dcdeb12e0017b709dc22e7689479410b ingredients/lineage-22.2-20251130-nightly-m5-signed.zip" | sha256sum -c
+
+# Extract <aml_install_package> and <lineage-*.zip>
+make mod-extract-zip
+
+# Building the super.img
+make mod-super-only
+
+# Build <aml_upgrade_package>
+make mod-img-dynamic
 
 # other info
 ------------------------------------------

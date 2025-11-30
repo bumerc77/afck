@@ -46,7 +46,7 @@ DT=(
 )
 
 # write offsets to the w-descriptor
-if [[ "$list" -gt '1' ]; then
+if [[ "$list" -gt '1' ]]; then
     for i in $offset; do
        echo "$i" | awk '{print strtonum( "0x" $1 )}' >&$FD_W
     done

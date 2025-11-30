@@ -11,6 +11,6 @@ define INSTALL
 	@$(COPY) $(BCT.OUT)/$(SUPER_SPARSE) $(IMG.IN)$(SUPER) && sync
 	@$(RM) $(BCT.OUT)/*
 
-	$(TOOLS.DIR)aml_image_v2_packer -r $(IMG.IN)/image.cfg $(IMG.IN) $(BCT.OUT)/$(IMG.BASE)
+	$(TOOLS.DIR)aml_image_v2_packer -r $(IMG.IN)image.cfg $(IMG.IN) $(BCT.OUT)/$(IMG.BASE)
 	@echo -e "\n\033[32mdone!\033[0m"
 endef

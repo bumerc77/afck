@@ -38,8 +38,8 @@ cleanup_dt () {
 }; trap 'cleanup_dt' EXIT
 
 mod_super () {
-while true; do
-        read -r -p "ATTENTION: You have to rebuild the super.img, press (Y/y) to continue, (N/n) to cancel: "
+    while true; do
+    read -r -p "ATTENTION: You have to rebuild the super.img, press (Y/y) to continue, (N/n) to cancel: "
         case "$REPLY" in
             [Yy])
                 cd .. || exit
@@ -55,7 +55,7 @@ while true; do
                 ;;
         esac
         break
-done
+    done
 }
 
 declare -A DT

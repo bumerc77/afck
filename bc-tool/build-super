@@ -31,8 +31,9 @@ slot_count="$("$PLATFORM_TOOLS"/lpdump ../"$9""$2"."$sfx1"."$sfx2" | grep "Metad
 printf "Metadata slot count: %d\n" "$slot_count"
 
 group_name="$("$PLATFORM_TOOLS"/lpdump ../"$9""$2"."$sfx1"."$sfx2" | grep "Group:" | awk '{print $NF}' | sed '1!d')"
-group_size="$("$PLATFORM_TOOLS"/lpdump ../"$9""$2"."$sfx1"."$sfx2" | grep "Maximum size:" | awk '{print $3}' | sed '1d')"
 printf "Group name: %s\n" "$group_name"
+
+group_size="$("$PLATFORM_TOOLS"/lpdump ../"$9""$2"."$sfx1"."$sfx2" | grep "Maximum size:" | awk '{print $3}' | sed '1d')"
 
 device_size="$(fdtget -t u part_table /partitions/"$2" size | sed 's/0 //')"
 printf "Device $2 size: %d\n" "$device_size"

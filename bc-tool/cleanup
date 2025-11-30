@@ -14,7 +14,7 @@ read -r -p 'chose function number: ' N
 
 case "$N" in
     1)
-        find . \( -name "build" -or -name "stamp" -or -name "out" -type d \) 2>/dev/null -exec rm -rf {} \;
+        find . \( -name "build" -or -name "sdat2img" -or -name "stamp" -or -name "out" -type d \) 2>/dev/null -exec rm -rf {} \;
         find . \( -name "*.txt" -or -name "DT*" -or -name "vendor_c*" -or -name "file*" -or -name "*.dts" -type f \) -exec rm -f {} \;
         echo -e "\033[32mBuild directory cleaned up!\033[0m"
         ;;

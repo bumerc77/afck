@@ -78,18 +78,22 @@ STAMPDIR = $(BCT.DIR)stamp/
 BCT.DIR = bc-tool/
 # bc-tool out
 BCT.OUT = bc-tool/out
+# sdat2img dir
+SDAT2IMG = $(PWD)/$(BCT.DIR)sdat2img/
 # use home dir for build srcipp
 HOME.DIR = $(PWD)/$(BCT.DIR)build/
 # build dir
 BUILD.DIR = $(BCT.DIR)build/
 # odm dir
 ODM = $(BUILD.DIR)odm/
+
 # product dir
 ifneq ($(TARGET_HAS_DYNAMIC_PART),true)
 PRODUCT = $(BUILD.DIR)system/system/product/
 else
 PRODUCT = $(BUILD.DIR)product/
 endif
+
 # vendor dir
 VENDOR = $(BUILD.DIR)vendor/
 # vendor_dlkm dir
@@ -102,6 +106,9 @@ SYSTEM_EXT = $(BUILD.DIR)system_ext/
 SELINUX = $(BUILD.DIR)selinux/
 # Каталог с файлами для целевой платформы
 TARGET.DIR = build/$(TARGET)/
+# Partition table dir
+PART.TABLE = $(PWD)/$(BCT.DIR)
+
 # Функция для добавления описания $2 цели $1
 HELPL = $(NL)$(C.BOLD) $(strip $1)$(C.RST) - $(strip $2)
 

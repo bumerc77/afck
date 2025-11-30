@@ -8,16 +8,6 @@ $(call IMG.UNPACK.EXT4,odm)
 $(call IMG.UNPACK.EXT4,system)
 $(call IMG.UNPACK.EXT4,vendor)
 
-ifneq ($(MESON_DTB), true)
-LOCAL_DTB := $(IMG.IN)_aml_dtb.PARTITION
-else
-LOCAL_DTB := $(IMG.IN)meson1.dtb
-endif
-
-ifeq ($(INSPECT_REPACKED_IMG), true)
-INSPECT_SCR_STOCK := $(BCT.DIR)test/gen_perms_caps_labels_stock.sh
-endif
-
 define INSTALL
 	mkdir -p $(SELINUX)
 
